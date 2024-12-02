@@ -3,6 +3,7 @@ mod auth;
 mod server;
 mod routes;
 mod models;
+mod controllers;
 
 use std::sync::Arc;
 

@@ -1,63 +1,109 @@
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
-use actix_web::{web, HttpResponse};
-use tokio_postgres::Client;
+use actix_web::error;
+use actix_web::{
+    dev::{Service, ServiceRequest, ServiceResponse},
+    Error,
+};
+use jsonwebtoken::{encode, EncodingKey, Header};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use serde::Deserialize;
 
-use crate::models::user::User;
+use actix_service::Transform;
 
-/// Struct representing the request data for creating a user.
-#[derive(Deserialize)]
-pub struct CreateUserRequest {
-    pub name: String,       // User's name
-    pub email: String,      // User's email
-    pub password: String,   // User's password (to be hashed)
+use futures::future::{ok, Either, Ready};
+
+use std::task::{Context, Poll};
+
+#[derive(Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: Uuid,  // User ID
+    pub exp: usize, // Expiration timestamp
 }
 
-/// Handler function to create a user.
-/// This function processes the incoming HTTP request, hashes the password, and
-/// stores the user in the database.
-pub async fn create_user(
-    client: web::Data<Arc<Client>>,
-    user_data: web::Json<CreateUserRequest>,
-) -> HttpResponse {
-    // Call the create_user method from the User model to insert the new user into the database
-    let user = User::create_user(&client, &user_data.name, &user_data.email, &user_data.password).await;
+/// Creates a JWT for the given user ID.
+pub fn create_jwt(user_id: Uuid) -> Result<String, Box<dyn std::error::Error>> {
+    let expiration = chrono::Utc::now()
+        .checked_add_signed(chrono::Duration::seconds(3600))
+        .expect("Invalid expiration time")
+        .timestamp() as usize;
 
-    match user {
-        // If user creation is successful, return the user data as JSON
-        Ok(user) => HttpResponse::Ok().json(user),
-        // If there's an error during creation, return an internal server error response
-        Err(e) => {
-            eprintln!("Error creating user: {:?}", e);
-            HttpResponse::InternalServerError().finish()
+    let claims = Claims {
+        sub: user_id,
+        exp: expiration,
+    };
+
+    let secret = env::var("JWT_SECRET").expect("JWT_SECRET not set");
+    let encoding_key = EncodingKey::from_secret(secret.as_ref());
+    let token = encode(&Header::default(), &claims, &encoding_key)?;
+
+    Ok(token)
+}
+
+/// Middleware for JWT authentication
+pub struct JwtMiddleware<S> {
+    service: S,
+}
+
+impl<S, Req> Transform<S, ServiceRequest> for JwtMiddleware<Req>
+where
+    S: Service<ServiceRequest, Response = ServiceResponse, Error = Error> + 'static,
+    S::Future: 'static,
+{
+    type Response = ServiceResponse;
+    type Error = Error;
+    type InitError = ();
+    type Transform = JwtMiddleware<S>;
+    type Future = Ready<Result<Self::Transform, Self::InitError>>;
+
+    fn new_transform(&self, service: S) -> Self::Future {
+        ok(JwtMiddleware { service })
+    }
+}
+
+impl<S> Service<ServiceRequest> for JwtMiddleware<S>
+where
+    S: Service<ServiceRequest, Response = ServiceResponse, Error = Error> + 'static,
+    S::Future: 'static,
+{
+    type Response = ServiceResponse;
+    type Error = Error;
+    type Future = Either<S::Future, Ready<Result<Self::Response, Self::Error>>>;
+
+    fn poll_ready(&self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(cx)
+    }
+
+    fn call(&self, req: ServiceRequest) -> Self::Future {
+        // Extract token from the Authorization header
+        if let Some(auth_header) = req.headers().get("Authorization") {
+            if let Ok(token) = auth_header.to_str() {
+                match validate_token(token) {
+                    Ok(_) => {
+                        // Token is valid, proceed to the next service
+                        return Either::Left(self.service.call(req));
+                    }
+                    Err(_) => {
+                        return Either::Right(ok(
+                            req.error_response(error::ErrorUnauthorized("Invalid token"))
+                        ))
+                    }
+                }
+            }
         }
+
+        Either::Right(ok(req.error_response(error::ErrorUnauthorized(
+            "Authorization token missing",
+        ))))
     }
 }
 
-/// Handler function to fetch a user by their ID.
-/// This function queries the database to retrieve the user based on the given ID.
-pub async fn get_user(client: web::Data<Arc<Client>>, user_id: web::Path<Uuid>) -> HttpResponse {
-    // Call the get_user method from the User model to fetch the user data
-    let user = User::get_user(&client, user_id.into_inner()).await;
+// JWT token validation function
+fn validate_token(token: &str) -> Result<Claims, Box<dyn std::error::Error>> {
+    let secret = std::env::var("JWT_SECRET").expect("JWT_SECRET not set");
+    let decoding_key = jsonwebtoken::DecodingKey::from_secret(secret.as_ref());
+    let validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
 
-    match user {
-        // If the user is found, return the user data as JSON
-        Ok(Some(user)) => HttpResponse::Ok().json(user),
-        // If no user is found with the given ID, return a 404 response
-        Ok(None) => HttpResponse::NotFound().finish(),
-        // If there's an error during the query, return an internal server error response
-        Err(_) => HttpResponse::InternalServerError().finish(),
-    }
+    let token_data = jsonwebtoken::decode::<Claims>(token, &decoding_key, &validation)?;
+    Ok(token_data.claims)
 }
-
-/// Configures the routes for user-related endpoints.
-pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(
-        web::scope("/users")
-            .route("/create", web::post().to(create_user))  // Route to create a new user
-            .route("/{id}", web::get().to(get_user)),      // Route to fetch a user by ID
-    );
-}
-
