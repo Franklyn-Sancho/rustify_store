@@ -6,7 +6,7 @@ use serde::Deserialize;
 use tokio_postgres::Client;
 use uuid::Uuid;
 
-use crate::models::product_models::Product;
+use crate::models::product_model::Product;
 
 #[derive(Deserialize)]
 pub struct CreateProductRequest {

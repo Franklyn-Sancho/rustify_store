@@ -3,7 +3,7 @@ use tokio_postgres::Client;
 use uuid::Uuid;
 use serde::Deserialize;
 
-use crate::models::{order_items_models::OrderItem, order_models::Order};
+use crate::models::{order_items_model::OrderItem};
 
 #[derive(Deserialize)]
 pub struct CreateOrderItemRequest {

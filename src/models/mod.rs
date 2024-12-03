@@ -1,4 +1,5 @@
-pub mod user_models;
-pub mod product_models;
-pub mod order_models;
-pub mod order_items_models;
+pub mod user_model;
+pub mod product_model;
+pub mod order_model;
+pub mod order_items_model;
+pub mod payment_model;

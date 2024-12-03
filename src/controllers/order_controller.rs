@@ -4,7 +4,7 @@ use tokio_postgres::{Client, Error};
 use uuid::Uuid;
 use actix_web::{web, HttpResponse};
 
-use crate::models::order_models::Order;
+use crate::models::order_model::Order;
 
 #[derive(serde::Deserialize)]
 pub struct CreateOrderRequest {
@@ -52,7 +52,7 @@ pub async fn get_order(
     }
 }
 
-/// Handler para deletar um pedido
+/// Handler to delete a order
 pub async fn delete_order(
     client: web::Data<Arc<Client>>, // Cliente do banco de dados
     order_id: web::Path<Uuid>, // ID do pedido como parâmetro

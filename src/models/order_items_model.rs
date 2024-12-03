@@ -1,7 +1,7 @@
-use tokio_postgres::Client;
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use tokio_postgres::Client;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 pub struct OrderItem {
@@ -13,6 +13,20 @@ pub struct OrderItem {
 }
 
 impl OrderItem {
+    async fn check_stock(
+        client: &Client,
+        product_id: Uuid,
+        requested_quantity: i32,
+    ) -> Result<bool, Box<dyn Error>> {
+        let row = client
+            .query_one("SELECT stock FROM products WHERE id = $1", &[&product_id])
+            .await?;
+
+        let stock: i32 = row.get(0);
+
+        Ok(stock >= requested_quantity) // Retorna verdadeiro se o estoque for suficiente
+    }
+
     /// Create a new order item
     pub async fn create_order_item(
         client: &Client,
@@ -67,10 +81,7 @@ impl OrderItem {
     }
 
     /// Delete an order item by ID
-    pub async fn delete_order_item(
-        client: &Client,
-        item_id: Uuid,
-    ) -> Result<bool, Box<dyn Error>> {
+    pub async fn delete_order_item(client: &Client, item_id: Uuid) -> Result<bool, Box<dyn Error>> {
         let result = client
             .execute("DELETE FROM order_items WHERE id = $1", &[&item_id])
             .await?;
