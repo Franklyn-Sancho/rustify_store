@@ -1,8 +1,11 @@
+use std::error::Error;
+
 use serde::{Deserialize, Serialize};
-use tokio_postgres::{Client, Error};
+use tokio_postgres::Client;
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize)]
+/// Represents an order in the system.
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Order {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -10,43 +13,58 @@ pub struct Order {
 }
 
 impl Order {
+    /// Creates a new order for a given user with a default 'pending' status.
+    /// The order is inserted into the database and the order details are returned.
     pub async fn create_order(
         client: &Client,
         user_id: Uuid,
-        status: String,
-    ) -> Result<Order, Error> {
-        // Generate a new UUID for the product.
+    ) -> Result<Order, Box<dyn Error>> {
+        // Generate a new UUID for the order.
         let id = Uuid::new_v4();
-
-        // Execute the SQL insert query, returning the newly created product attributes.
-        let row = client
+        
+        // Default status is set to 'pending'.
+        let status = "pending";
+    
+        // Log for debugging purposes to check the data being inserted.
+        println!("Creating order with ID: {:?} for user: {:?} with status: {}", id, user_id, status);
+        
+        // Insert the new order into the database.
+        let row = match client
             .query_one(
-                "INSERT INTO order (id, user_id, status) 
+                "INSERT INTO orders (id, user_id, status) 
                  VALUES ($1, $2, $3) 
                  RETURNING id, user_id, status",
-                &[&id, &user_id, &status], // Pass Decimal directly.
+                &[&id, &user_id, &status],
             )
-            .await?;
-
-        // Construct and return the Product struct from the database response.
+            .await
+        {
+            Ok(row) => row,
+            Err(err) => {
+                // Log error to help identify issues with the query.
+                eprintln!("Error inserting order into database: {:?}", err);
+                return Err(Box::new(err));
+            }
+        };
+    
+        // Return the created order.
         Ok(Order {
             id: row.get(0),
             user_id: row.get(1),
-            status: row.get(2),
+            status: row.get(2), // Status returned from the database
         })
     }
 
-    /// Retrieves a product from the database by its ID.
-    pub async fn get_order(client: &Client, order_id: Uuid) -> Result<Option<Order>, Error> {
-        // Query the database to fetch the product with the given ID.
+    /// Retrieves an order from the database by its ID.
+    pub async fn get_order(client: &Client, order_id: Uuid) -> Result<Option<Order>, Box<dyn Error>> {
+        // Query the database to retrieve the order by its ID.
         let rows = client
             .query(
-                "SELECT id, user_id, status FROM order WHERE id = $1",
+                "SELECT id, user_id, status FROM orders WHERE id = $1",
                 &[&order_id],
             )
             .await?;
 
-        // If a matching row is found, construct and return the Product struct.
+        // If a matching row is found, construct and return the Order struct.
         if let Some(row) = rows.get(0) {
             Ok(Some(Order {
                 id: row.get(0),
@@ -54,19 +72,20 @@ impl Order {
                 status: row.get(2),
             }))
         } else {
-            // Return None if no product matches the given ID.
+            // Return None if no order matches the given ID.
             Ok(None)
         }
     }
 
-    /// Deletes a product from the database by its ID.
-    pub async fn delete_order(client: &Client, order_id: Uuid) -> Result<bool, Error> {
-        // Execute the SQL delete query for the specified product ID.
+    /// Deletes an order from the database by its ID.
+    /// Returns true if the order was successfully deleted, otherwise false.
+    pub async fn delete_order(client: &Client, order_id: Uuid) -> Result<bool, Box<dyn Error>> {
+        // Execute the SQL delete query for the specified order ID.
         let result = client
-            .execute("DELETE FROM order WHERE id = $1", &[&order_id])
+            .execute("DELETE FROM orders WHERE id = $1", &[&order_id])
             .await?;
 
-        // Return true if at least one row was affected (product deleted), otherwise false.
+        // Return true if the order was deleted (i.e., if at least one row was affected).
         Ok(result > 0)
     }
 }

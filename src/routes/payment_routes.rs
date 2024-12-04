@@ -12,6 +12,6 @@ pub fn payment_routes(cfg: &mut web::ServiceConfig) {
     )
     .service(
         web::resource("/payments/{payment_id}")
-            .route(web::put().to(update_payment_status)),
+            .route(web::patch().to(update_payment_status)),
     );
 }

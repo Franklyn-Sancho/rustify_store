@@ -1,69 +1,112 @@
 use std::sync::Arc;
 
+use actix_web::{web, HttpResponse};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use tokio_postgres::{Client, Error};
 use uuid::Uuid;
-use actix_web::{web, HttpResponse};
 
-use crate::models::order_model::Order;
+use crate::models::{order_items_model::OrderItem, order_model::Order, payment_model::Payment};
 
-#[derive(serde::Deserialize)]
+/// Represents the request body to create a new order, including the items.
+#[derive(Serialize, Deserialize)]
 pub struct CreateOrderRequest {
-    pub status: String,
+    pub items: Vec<OrderItemRequest>, // List of items in the order
 }
 
-/// Handler para criar um pedido
-pub async fn create_order(
-    client: web::Data<Arc<Client>>, // Cliente do banco de dados
-    user_id: web::Path<Uuid>, // ID do usuário como parâmetro
-    body: web::Json<CreateOrderRequest>, // Dados do pedido recebidos no corpo da requisição
-) -> HttpResponse {
-    let order = Order::create_order(
-        &client,
-        *user_id,
-        body.status.clone(), // Aqui você pode extrair o status do corpo da requisição
-    )
-    .await;
+/// Represents an individual item in the order, including the product ID, quantity, and price.
+#[derive(Serialize, Deserialize)]
+pub struct OrderItemRequest {
+    pub product_id: Uuid, // ID of the product being ordered
+    pub quantity: i32,    // Quantity of the product
+    pub price: Decimal,   // Price of the product
+}
 
-    match order {
-        // If order creation is successful, return the order data as JSON in the response
-        Ok(order) => HttpResponse::Ok().json(order),
-        // If an error occurs during order creation, log the error and return a 500 internal server error
-        Err(e) => {
-            eprintln!("Error creating order: {:?}", e); // Log the error details
-            HttpResponse::InternalServerError().finish() // Send a generic internal server error response
+/// Handler to create an order along with its items and payment.
+pub async fn create_order(
+    client: web::Data<Arc<Client>>,      // Database client
+    user_id: web::Path<Uuid>,            // User ID for the order
+    body: web::Json<CreateOrderRequest>, // Request body containing order details
+) -> HttpResponse {
+    let order = match Order::create_order(&client, *user_id).await {
+        Ok(order) => order,
+        Err(err) => {
+            eprintln!("Error creating order: {:?}", err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    for item in &body.items {
+        let is_in_stock =
+            match OrderItem::check_stock(&client, item.product_id, item.quantity).await {
+                Ok(stock) => stock,
+                Err(err) => {
+                    eprintln!("Error checking stock: {:?}", err);
+                    return HttpResponse::InternalServerError().finish();
+                }
+            };
+
+        if !is_in_stock {
+            return HttpResponse::BadRequest().body("Insufficient stock for one or more items.");
+        }
+
+        // Add the item to the order.
+        match OrderItem::create_order_item(
+            &client,
+            order.id,
+            item.product_id,
+            item.quantity,
+            item.price,
+        )
+        .await
+        {
+            Ok(_) => {}
+            Err(err) => {
+                eprintln!("Error adding item to order: {:?}", err);
+                return HttpResponse::InternalServerError().finish();
+            }
         }
     }
+
+    let payment_method = "credit_card"; // Default payment method
+    match Payment::create_payment(&client, order.id, &payment_method).await {
+        Ok(_) => {}
+        Err(err) => {
+            eprintln!("Error creating payment: {:?}", err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+
+    HttpResponse::Created().json(order)
 }
 
-/// Handler para obter um pedido
+/// Handler to retrieve an order by its ID.
 pub async fn get_order(
-    client: web::Data<Arc<Client>>, // Cliente do banco de dados
-    order_id: web::Path<Uuid>, // ID do pedido como parâmetro
+    client: web::Data<Arc<Client>>, // Database client
+    order_id: web::Path<Uuid>,      // Order ID to fetch
 ) -> HttpResponse {
     let order = Order::get_order(&client, *order_id).await;
 
     match order {
-        // If the order is found, return the order data as JSON
+        // If order is found, return as JSON
         Ok(Some(order)) => HttpResponse::Ok().json(order),
-        // If no order is found with the given ID, return a 404 response
+        // If no order is found, return a 404 Not Found response
         Ok(None) => HttpResponse::NotFound().finish(),
-        // If there's an error during the query, return an internal server error response
+        // If an error occurs during the database query, return a 500 Internal Server Error
         Err(_) => HttpResponse::InternalServerError().finish(),
     }
 }
 
-/// Handler to delete a order
+/// Handler to delete an order by its ID.
 pub async fn delete_order(
-    client: web::Data<Arc<Client>>, // Cliente do banco de dados
-    order_id: web::Path<Uuid>, // ID do pedido como parâmetro
+    client: web::Data<Arc<Client>>, // Database client
+    order_id: web::Path<Uuid>,      // Order ID to delete
 ) -> HttpResponse {
-    // Call the `delete_order` method from the order model to delete the order
+    // Attempt to delete the order and handle any errors.
     match Order::delete_order(&client, order_id.into_inner()).await {
-        // If the deletion is successful, return a 204 No Content response
+        // If the deletion is successful, return a 204 No Content response.
         Ok(_) => HttpResponse::NoContent().finish(),
-        // If an error occurs during deletion, return an internal server error
+        // If an error occurs, return a 500 Internal Server Error.
         Err(_) => HttpResponse::InternalServerError().finish(),
     }
 }
-
-
