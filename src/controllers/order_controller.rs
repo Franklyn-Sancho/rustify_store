@@ -27,6 +27,7 @@ pub async fn create_order(
     user_id: web::Path<Uuid>,            // User ID for the order
     body: web::Json<CreateOrderRequest>, // Request body containing order details
 ) -> HttpResponse {
+    // Creating the order.
     let order = match Order::create_order(&client, *user_id).await {
         Ok(order) => order,
         Err(err) => {
@@ -35,6 +36,7 @@ pub async fn create_order(
         }
     };
 
+    // Processing the order items.
     for item in &body.items {
         let is_in_stock =
             match OrderItem::check_stock(&client, item.product_id, item.quantity).await {
@@ -49,7 +51,7 @@ pub async fn create_order(
             return HttpResponse::BadRequest().body("Insufficient stock for one or more items.");
         }
 
-        // Add the item to the order.
+        // Adding the item to the order.
         match OrderItem::create_order_item(&client, order.id, item.product_id, item.quantity).await
         {
             Ok(_) => {}
@@ -60,17 +62,19 @@ pub async fn create_order(
         }
     }
 
-    let payment_method = "credit_card"; // Default payment method
-    match Payment::create_payment(&client, order.id, &payment_method).await {
-        Ok(_) => {}
+    let payment_method = ""; // Empty payment method initially
+    let _payment = match Payment::create_payment(&client, order.id, &payment_method).await {
+        Ok(payment) => payment,
         Err(err) => {
             eprintln!("Error creating payment: {:?}", err);
             return HttpResponse::InternalServerError().finish();
         }
     };
 
+    // Returning the order with the created payment (pending).
     HttpResponse::Created().json(order)
 }
+
 
 /// Handler to retrieve an order by its ID.
 pub async fn get_order(

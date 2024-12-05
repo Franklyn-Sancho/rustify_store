@@ -15,8 +15,8 @@ pub struct CreatePaymentRequest {
 
 /// Represents the request body to update the payment status.
 #[derive(Deserialize)]
-pub struct UpdatePaymentStatusRequest {
-    pub status: String, // "completed", "failed"
+pub struct UpdatePaymentRequest {
+    pub payment_method: String,  // O método de pagamento que o usuário deseja usar
 }
 
 /// Handler to create a payment for an order.
@@ -57,29 +57,30 @@ pub async fn get_payment(
 }
 
 /// Handler to update the payment status.
-pub async fn update_payment_status(
-    client: web::Data<Arc<Client>>,           // Database client
-    payment_id: web::Path<Uuid>,             // Payment ID to update
-    body: web::Json<UpdatePaymentStatusRequest>, // Request body with new status
+pub async fn update_payment(
+    client: web::Data<Arc<Client>>,
+    payment_id: web::Path<Uuid>,
+    body: web::Json<UpdatePaymentRequest>,
 ) -> Result<HttpResponse, Error> {
-    info!("Updating payment status for payment_id: {}", payment_id);
+    // Update the payment method
+    let method_updated = Payment::update_payment_method(&client, *payment_id, &body.payment_method).await
+        .map_err(actix_web::error::ErrorInternalServerError)?;
 
-    // Update the payment status
-    let success = Payment::update_payment_status(&client, *payment_id, &body.status)
-        .await
-        .map_err(|e| {
-            error!("Failed to update payment status: {:?}", e);
-            actix_web::error::ErrorInternalServerError(e)
-        })?;
+    if method_updated {
+        // After updating the payment method, update the status to "paid"
+        Payment::update_payment_status(&client, *payment_id)
+            .await
+            .map_err(actix_web::error::ErrorInternalServerError)?;
 
-    // Return appropriate response based on update success
-    if success {
-        info!("Payment status updated successfully for payment_id: {}", payment_id);
-        Ok(HttpResponse::NoContent().finish()) // No content if update is successful
+        Ok(HttpResponse::NoContent().finish())  // Returns 204 No Content if the operation is successful
     } else {
-        error!("Payment not found for payment_id: {}", payment_id);
-        Ok(HttpResponse::NotFound().finish()) // Not found if the payment does not exist
+        Ok(HttpResponse::NotFound().finish())  // Returns 404 if the payment is not found
     }
 }
+
+
+
+
+
 
 

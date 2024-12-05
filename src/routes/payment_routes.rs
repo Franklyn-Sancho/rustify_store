@@ -1,7 +1,7 @@
 use actix_web::web;
 
 use crate::controllers::payment_controller::{
-    create_payment, get_payment, update_payment_status,
+    create_payment, get_payment, update_payment
 };
 
 pub fn payment_routes(cfg: &mut web::ServiceConfig) {
@@ -12,6 +12,6 @@ pub fn payment_routes(cfg: &mut web::ServiceConfig) {
     )
     .service(
         web::resource("/payments/{payment_id}")
-            .route(web::patch().to(update_payment_status)),
+            .route(web::patch().to(update_payment)),
     );
 }

@@ -24,9 +24,6 @@ impl Order {
         
         // Default status is set to 'pending'.
         let status = "pending";
-    
-        // Log for debugging purposes to check the data being inserted.
-        println!("Creating order with ID: {:?} for user: {:?} with status: {}", id, user_id, status);
         
         // Insert the new order into the database.
         let row = match client

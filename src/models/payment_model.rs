@@ -22,10 +22,10 @@ impl Payment {
     ) -> Result<Payment, Box<dyn Error>> {
         // Generate a new UUID for the payment.
         let id = Uuid::new_v4();
-        
-        // Default status is set to 'pending'.
+
+        // The default status will be 'pending'.
         let status = "pending";
-        
+
         // Insert the payment into the database.
         let row = client
             .query_one(
@@ -45,22 +45,36 @@ impl Payment {
         })
     }
 
-    /// Updates the status of an existing payment.
-    /// Returns true if the payment status was successfully updated.
     pub async fn update_payment_status(
         client: &Client,
         payment_id: Uuid,
-        new_status: &str,
     ) -> Result<bool, Box<dyn Error>> {
-        // Update the payment status in the database.
+        // Updates the payment status to "paid" or "completed"
         let result = client
             .execute(
-                "UPDATE payments SET status = $1 WHERE id = $2",
-                &[&new_status, &payment_id],
+                "UPDATE payments SET status = 'paid' WHERE id = $1",
+                &[&payment_id],
             )
             .await?;
 
-        // Return true if the status was updated
+        // Returns true if the status was updated
+        Ok(result > 0)
+    }
+
+    pub async fn update_payment_method(
+        client: &Client,
+        payment_id: Uuid,
+        new_payment_method: &str,
+    ) -> Result<bool, Box<dyn Error>> {
+        // Updates the payment method in the database.
+        let result = client
+            .execute(
+                "UPDATE payments SET payment_method = $1 WHERE id = $2",
+                &[&new_payment_method, &payment_id],
+            )
+            .await?;
+
+        // Returns true if the method was updated
         Ok(result > 0)
     }
 
@@ -77,7 +91,7 @@ impl Payment {
                 &[&order_id],
             )
             .await?;
-    
+
         // If a matching row is found, construct and return the Payment struct.
         if let Some(row) = rows.get(0) {
             Ok(Some(Payment {
@@ -92,4 +106,3 @@ impl Payment {
         }
     }
 }
-
