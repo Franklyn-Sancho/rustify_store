@@ -40,20 +40,20 @@ impl OrderItem {
         order_id: Uuid,
         product_id: Uuid,
         quantity: i32,
-        price: Decimal,
     ) -> Result<OrderItem, Box<dyn Error>> {
-        // Check if the product is in stock.
+        // Step 1: Fetch the product price
+        let price = Self::get_product_price(client, product_id).await?;
+    
+        // Step 2: Check if the product is in stock
         let is_in_stock = Self::check_stock(client, product_id, quantity).await?;
-
-        // Return an error if stock is insufficient.
+    
+        // Step 3: Return an error if stock is insufficient
         if !is_in_stock {
             return Err("Insufficient stock for the product".into());
         }
-
-        // If stock is available, create the order item.
+    
+        // Step 4: If stock is available, create the order item
         let id = Uuid::new_v4();
-
-        // Insert the order item into the database and retrieve the created item.
         let row = client
             .query_one(
                 "INSERT INTO order_items (id, order_id, product_id, quantity, price) 
@@ -62,16 +62,16 @@ impl OrderItem {
                 &[&id, &order_id, &product_id, &quantity, &price],
             )
             .await?;
-
-        // Decrement the product stock by the quantity ordered.
+    
+        // Step 5: Decrement the product stock by the quantity ordered
         client
             .execute(
                 "UPDATE products SET stock = stock - $1 WHERE id = $2",
                 &[&quantity, &product_id],
             )
             .await?;
-
-        // Return the newly created OrderItem.
+    
+        // Step 6: Return the newly created OrderItem
         Ok(OrderItem {
             id: row.get(0),
             order_id: row.get(1),
@@ -79,6 +79,19 @@ impl OrderItem {
             quantity: row.get(3),
             price: row.get(4),
         })
+    }
+    
+
+    pub async fn get_product_price(
+        client: &Client,
+        product_id: Uuid,
+    ) -> Result<Decimal, Box<dyn Error>> {
+        let row = client
+            .query_one("SELECT price FROM products WHERE id = $1", &[&product_id])
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn Error>)?; // Ensure the error is boxed
+
+        Ok(row.get(0)) // Return the price as a Decimal
     }
 
     /// Retrieves all items associated with a specific order.
@@ -110,10 +123,7 @@ impl OrderItem {
 
     /// Deletes an order item by its ID.
     /// Returns true if the item was successfully deleted, false otherwise.
-    pub async fn delete_order_item(
-        client: &Client,
-        item_id: Uuid,
-    ) -> Result<bool, Box<dyn Error>> {
+    pub async fn delete_order_item(client: &Client, item_id: Uuid) -> Result<bool, Box<dyn Error>> {
         // Execute the deletion query.
         let result = client
             .execute("DELETE FROM order_items WHERE id = $1", &[&item_id])

@@ -19,7 +19,6 @@ pub struct CreateOrderRequest {
 pub struct OrderItemRequest {
     pub product_id: Uuid, // ID of the product being ordered
     pub quantity: i32,    // Quantity of the product
-    pub price: Decimal,   // Price of the product
 }
 
 /// Handler to create an order along with its items and payment.
@@ -51,14 +50,7 @@ pub async fn create_order(
         }
 
         // Add the item to the order.
-        match OrderItem::create_order_item(
-            &client,
-            order.id,
-            item.product_id,
-            item.quantity,
-            item.price,
-        )
-        .await
+        match OrderItem::create_order_item(&client, order.id, item.product_id, item.quantity).await
         {
             Ok(_) => {}
             Err(err) => {

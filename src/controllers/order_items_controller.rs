@@ -12,30 +12,29 @@ use crate::models::{order_items_model::OrderItem};
 #[derive(Deserialize)]
 pub struct CreateOrderItemRequest {
     pub product_id: Uuid, // Product ID
-    pub quantity: i32,    // Quantity of the product ordered
-    pub price: Decimal,   // Price of the product
+    pub quantity: i32,    // Product quantity
 }
+
 
 /// Handler to create a new order item.
 pub async fn create_order_item(
-    client: web::Data<Arc<Client>>,       // Database client
-    order_id: web::Path<Uuid>,           // Order ID for the item
-    body: web::Json<CreateOrderItemRequest>, // Request body containing item details
+    client: web::Data<Arc<Client>>,
+    order_id: web::Path<Uuid>,
+    body: web::Json<CreateOrderItemRequest>,
 ) -> Result<HttpResponse, Error> {
-    // Call the create function to add the item to the order
     let order_item = OrderItem::create_order_item(
         &client,
         *order_id,
         body.product_id,
         body.quantity,
-        body.price,
     )
     .await
     .map_err(actix_web::error::ErrorInternalServerError)?;
 
-    // Return the created order item in the response
     Ok(HttpResponse::Created().json(order_item))
 }
+
+
 
 /// Handler to retrieve all items for a specific order.
 pub async fn get_order_items(
