@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use crate::models::payment_model::Payment;
+use crate::{auth::AuthenticatedUser, models::{order_model::Order, payment_model::Payment}};
 use actix_web::{web, HttpResponse, Error};
-use log::{error, info};
 use tokio_postgres::Client;
 use uuid::Uuid;
 use serde::Deserialize;
@@ -16,16 +15,24 @@ pub struct CreatePaymentRequest {
 /// Represents the request body to update the payment status.
 #[derive(Deserialize)]
 pub struct UpdatePaymentRequest {
-    pub payment_method: String,  // O método de pagamento que o usuário deseja usar
+    pub payment_method: String, 
 }
 
-/// Handler to create a payment for an order.
 pub async fn create_payment(
     client: web::Data<Arc<Client>>,           // Database client
+    auth_user: AuthenticatedUser,            // Authenticated user
     order_id: web::Path<Uuid>,               // Associated order ID
     body: web::Json<CreatePaymentRequest>,   // Request body with payment method
 ) -> Result<HttpResponse, Error> {
-    // Create the payment for the order with the provided method
+    // Validate if the order belongs to the authenticated user
+    let user_id = auth_user.0.sub;
+    let is_owner = Order::verify_order_owner(&client, *order_id, user_id).await;
+
+    if let Err(_) | Ok(false) = is_owner {
+        return Ok(HttpResponse::Forbidden().body("You do not have permission to access this order."));
+    }
+
+    // Create the payment
     let payment = Payment::create_payment(
         &client,
         *order_id,
@@ -34,21 +41,30 @@ pub async fn create_payment(
     .await
     .map_err(actix_web::error::ErrorInternalServerError)?;
 
-    // Return the created payment in the response
     Ok(HttpResponse::Created().json(payment))
 }
+
+
 
 /// Handler to retrieve the payment for a specific order.
 pub async fn get_payment(
     client: web::Data<Arc<Client>>,  // Database client
+    auth_user: AuthenticatedUser,   // Authenticated user
     order_id: web::Path<Uuid>,      // Order ID to fetch the payment for
 ) -> Result<HttpResponse, Error> {
-    // Fetch the payment associated with the given order ID
+    // validate user
+    let user_id = auth_user.0.sub;
+    let is_owner = Order::verify_order_owner(&client, *order_id, user_id).await;
+
+    if let Err(_) | Ok(false) = is_owner {
+        return Ok(HttpResponse::Forbidden().body("You do not have permission to access this order."));
+    }
+
+    // get payment
     let payment = Payment::get_payment(&client, *order_id)
         .await
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
-    // If payment exists, return it as a JSON response, otherwise return 404
     if let Some(payment) = payment {
         Ok(HttpResponse::Ok().json(payment))
     } else {
@@ -56,27 +72,39 @@ pub async fn get_payment(
     }
 }
 
+
 /// Handler to update the payment status.
 pub async fn update_payment(
-    client: web::Data<Arc<Client>>,
-    payment_id: web::Path<Uuid>,
-    body: web::Json<UpdatePaymentRequest>,
+    client: web::Data<Arc<Client>>,        // Database client
+    auth_user: AuthenticatedUser,         // Authenticated user
+    payment_id: web::Path<Uuid>,          // Payment ID
+    body: web::Json<UpdatePaymentRequest>, // Request body
 ) -> Result<HttpResponse, Error> {
-    // Update the payment method
-    let method_updated = Payment::update_payment_method(&client, *payment_id, &body.payment_method).await
+    // validate user
+    let user_id = auth_user.0.sub;
+
+    let is_owner = Payment::verify_payment_owner(&client, &payment_id, user_id).await;
+
+    if let Err(_) | Ok(false) = is_owner {
+        return Ok(HttpResponse::Forbidden().body("You do not have permission to access this payment."));
+    }
+
+    // update payment method
+    let method_updated = Payment::update_payment_method(&client, *payment_id, &body.payment_method)
+        .await
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
     if method_updated {
-        // After updating the payment method, update the status to "paid"
         Payment::update_payment_status(&client, *payment_id)
             .await
             .map_err(actix_web::error::ErrorInternalServerError)?;
 
-        Ok(HttpResponse::NoContent().finish())  // Returns 204 No Content if the operation is successful
+        Ok(HttpResponse::NoContent().finish())
     } else {
-        Ok(HttpResponse::NotFound().finish())  // Returns 404 if the payment is not found
+        Ok(HttpResponse::NotFound().finish())
     }
 }
+
 
 
 

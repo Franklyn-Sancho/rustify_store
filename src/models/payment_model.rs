@@ -45,6 +45,23 @@ impl Payment {
         })
     }
 
+    pub async fn verify_payment_owner(
+        client: &Client,
+        payment_id: &Uuid,
+        user_id: Uuid,
+    ) -> Result<bool, tokio_postgres::Error> {
+        let query = "
+            SELECT COUNT(*)
+            FROM payments
+            INNER JOIN orders ON payments.order_id = orders.id
+            WHERE payments.id = $1 AND orders.user_id = $2
+        ";
+    
+        let row = client.query_one(query, &[payment_id, &user_id]).await?;
+        Ok(row.get::<_, i64>(0) > 0)
+    }
+    
+
     pub async fn update_payment_status(
         client: &Client,
         payment_id: Uuid,

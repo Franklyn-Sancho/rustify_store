@@ -41,18 +41,14 @@ impl OrderItem {
         product_id: Uuid,
         quantity: i32,
     ) -> Result<OrderItem, Box<dyn Error>> {
-        // Step 1: Fetch the product price
         let price = Self::get_product_price(client, product_id).await?;
-    
-        // Step 2: Check if the product is in stock
+
         let is_in_stock = Self::check_stock(client, product_id, quantity).await?;
-    
-        // Step 3: Return an error if stock is insufficient
+
         if !is_in_stock {
             return Err("Insufficient stock for the product".into());
         }
-    
-        // Step 4: If stock is available, create the order item
+
         let id = Uuid::new_v4();
         let row = client
             .query_one(
@@ -62,16 +58,14 @@ impl OrderItem {
                 &[&id, &order_id, &product_id, &quantity, &price],
             )
             .await?;
-    
-        // Step 5: Decrement the product stock by the quantity ordered
+
         client
             .execute(
                 "UPDATE products SET stock = stock - $1 WHERE id = $2",
                 &[&quantity, &product_id],
             )
             .await?;
-    
-        // Step 6: Return the newly created OrderItem
+
         Ok(OrderItem {
             id: row.get(0),
             order_id: row.get(1),
@@ -80,7 +74,6 @@ impl OrderItem {
             price: row.get(4),
         })
     }
-    
 
     pub async fn get_product_price(
         client: &Client,

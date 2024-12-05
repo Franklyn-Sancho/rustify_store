@@ -15,16 +15,13 @@ pub struct Order {
 impl Order {
     /// Creates a new order for a given user with a default 'pending' status.
     /// The order is inserted into the database and the order details are returned.
-    pub async fn create_order(
-        client: &Client,
-        user_id: Uuid,
-    ) -> Result<Order, Box<dyn Error>> {
+    pub async fn create_order(client: &Client, user_id: Uuid) -> Result<Order, Box<dyn Error>> {
         // Generate a new UUID for the order.
         let id = Uuid::new_v4();
-        
+
         // Default status is set to 'pending'.
         let status = "pending";
-        
+
         // Insert the new order into the database.
         let row = match client
             .query_one(
@@ -42,7 +39,7 @@ impl Order {
                 return Err(Box::new(err));
             }
         };
-    
+
         // Return the created order.
         Ok(Order {
             id: row.get(0),
@@ -51,8 +48,21 @@ impl Order {
         })
     }
 
+    pub async fn verify_order_owner(
+        client: &Client,
+        order_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<bool, tokio_postgres::Error> {
+        let query = "SELECT COUNT(*) FROM orders WHERE id = $1 AND user_id = $2";
+        let row = client.query_one(query, &[&order_id, &user_id]).await?;
+        Ok(row.get::<_, i64>(0) > 0)
+    }
+
     /// Retrieves an order from the database by its ID.
-    pub async fn get_order(client: &Client, order_id: Uuid) -> Result<Option<Order>, Box<dyn Error>> {
+    pub async fn get_order(
+        client: &Client,
+        order_id: Uuid,
+    ) -> Result<Option<Order>, Box<dyn Error>> {
         // Query the database to retrieve the order by its ID.
         let rows = client
             .query(

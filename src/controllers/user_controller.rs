@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{auth::create_jwt, models::user_model::User};
+use crate::{jwt::create_jwt, models::user_model::User};
 use actix_web::{web, HttpResponse};
 use serde::Deserialize;
 use tokio_postgres::Client;

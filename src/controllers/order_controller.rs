@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use actix_web::{web, HttpResponse};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use tokio_postgres::{Client, Error};
+use tokio_postgres::Client;
 use uuid::Uuid;
 
-use crate::models::{order_items_model::OrderItem, order_model::Order, payment_model::Payment};
+use crate::{auth::AuthenticatedUser, jwt::Claims, models::{order_items_model::OrderItem, order_model::Order, payment_model::Payment}};
 
 /// Represents the request body to create a new order, including the items.
 #[derive(Serialize, Deserialize)]
@@ -24,11 +23,13 @@ pub struct OrderItemRequest {
 /// Handler to create an order along with its items and payment.
 pub async fn create_order(
     client: web::Data<Arc<Client>>,      // Database client
-    user_id: web::Path<Uuid>,            // User ID for the order
+    auth_user: AuthenticatedUser,           // User ID for the order
     body: web::Json<CreateOrderRequest>, // Request body containing order details
 ) -> HttpResponse {
-    // Creating the order.
-    let order = match Order::create_order(&client, *user_id).await {
+
+    let user_id = auth_user.0.sub; 
+
+    let order = match Order::create_order(&client, user_id).await {
         Ok(order) => order,
         Err(err) => {
             eprintln!("Error creating order: {:?}", err);

@@ -6,6 +6,16 @@ use tokio_postgres::Client;
 
 use crate::routes::routes::configure_routes;
 
+pub struct AppState {
+    pub db_client: Arc<Client>,
+}
+
+impl AppState {
+    // Altera para aceitar um Arc<Client> e não apenas um Client
+    pub fn new(client: Arc<Client>) -> Self {
+        AppState { db_client: client }
+    }
+}
 // Function to start the server and bind it to a host and port
 pub async fn run_server(client: Arc<Client>) -> std::io::Result<()> {
     // Loads environment variables from the .env file
@@ -21,17 +31,10 @@ pub async fn run_server(client: Arc<Client>) -> std::io::Result<()> {
     // Creates and runs the Actix web server
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(client.clone())) // Passes the database client as application data
+            .app_data(web::Data::new(client.clone())) // Passa o AppState para as rotas// Passes the database client as application data
             .configure(configure_routes) // Configures the routes (health check and user routes)
     })
     .bind((host.as_str(), port.parse::<u16>().unwrap()))? // Binds the server to the specified host and port
     .run() // Runs the server
     .await
 }
-
-
-
-
-
-
-
